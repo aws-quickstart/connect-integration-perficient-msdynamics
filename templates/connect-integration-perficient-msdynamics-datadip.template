@@ -1,0 +1,602 @@
+#Copyright 2018 Perficient, Inc. or its affiliates. All Rights Reserved.
+#
+#Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+#
+#    http://aws.amazon.com/apache2.0/
+#
+#or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Microsoft Dynamics Data Integration Quick Start for Amazon Connect"
+Parameters:
+  # Parameters let users input custom values into template when creating a stack
+  AzureADDomain:
+    Type: "String"
+    Description: "The domain of you Azure Active Directory instance, i.e. mycompany.onmicrosoft.com"
+  DynamicsHostDomain:
+    Type: "String"
+    Description: "The domain of your Microsoft Dynamics instance, i.e. mycompany.crm.dynamics.com"
+  DynamicsClientId:
+    Type: "String"
+    Description: "The client id of the Azure AD app registration you created with access to Dynamics"
+  DynamicsClientSecret:
+    Type: "String"
+    Description: "The client secret of the Azure AD app registration you created with access to Dynamics"
+    NoEcho: true
+  TriggerRateMinutes:
+    Type: "Number"
+    Description: "How often the Dynamics Lambda functions are invoked to keep them warm and refresh their access tokens"
+    Default: 30
+  NotificationEmailAddress:
+    Type: "String"
+    Description: "The email address to send notifications if Dynamics Web API authentication fails. The notifications will also be from this email address"
+Resources:
+  # IAM role to for a Lambda to execute itself
+  executeOwnLambdaIAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: "Allow"
+          Principal:
+            Service:
+              - "lambda.amazonaws.com"
+          Action:
+            - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies: 
+        - 
+          PolicyName: "sendSES"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "ses:SendEmail"
+                Resource: "*"
+  # Node.js Lambda function that gets a Dynamics API access token
+  getDynamicsTokenLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "Gets a Dynamics API access token"
+      Code:
+        ZipFile: !Sub |
+          const https = require("https");
+          const aws = require("aws-sdk");
+          const azureADDomain = process.env["AzureADDomain"];
+          const dynamicsHostDomain = process.env["DynamicsHostDomain"];
+          const dynamicsClientId = process.env["DynamicsClientId"];
+          const dynamicsClientSecret = process.env["DynamicsClientSecret"];
+          const authHost = "login.windows.net";
+          const grantType = "client_credentials";
+          const azureADAuthPath = "/" + azureADDomain + "/oauth2/token";
+          const dynamicsResourceUrl = "https://" + dynamicsHostDomain;
+          
+          exports.handler = (event, context, callback) => {
+            console.log(
+              "Starting auth request against token endpoint at: " + azureADAuthPath
+            );
+          
+            var authRequestBody = "";
+            authRequestBody += "grant_type=" + encodeURIComponent(grantType);
+            authRequestBody += "&resource=" + encodeURIComponent(dynamicsResourceUrl);
+            authRequestBody += "&client_id=" + encodeURIComponent(dynamicsClientId);
+            authRequestBody +=
+              "&client_secret=" + encodeURIComponent(dynamicsClientSecret);
+          
+            const authRequestHeaders = {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "Content-Length": Buffer.byteLength(authRequestBody)
+            };
+          
+            const options = {
+              host: authHost,
+              path: azureADAuthPath,
+              method: "POST",
+              headers: authRequestHeaders
+            };
+          
+            var authRequestClient = https.request(options, function(response) {
+              var authResponse = "";
+              response.setEncoding("utf8");
+          
+              response.on("data", function(dataChunk) {
+                authResponse += dataChunk;
+              });
+          
+              response.on("end", function() {
+                if (response.statusCode == 200) {
+                  const parsedAuthResponse = JSON.parse(authResponse);
+                  const accessToken = parsedAuthResponse.access_token;
+                  const accessTokenExpiresIn = parsedAuthResponse.expires_in;
+                  const accessTokenExpiresAt = parsedAuthResponse.expires_on;
+                  var accessTokenExpiryDate = new Date(0);
+                  accessTokenExpiryDate.setUTCSeconds(accessTokenExpiresAt);
+                  console.log(
+                    "Got new token that will expire in " +
+                      Math.round(accessTokenExpiresIn / 60) +
+                      " minutes at " +
+                      accessTokenExpiryDate
+                  );
+                  const result = {
+                    accessToken: accessToken,
+                    expiryDate: accessTokenExpiryDate
+                  };
+                  callback(null, result);
+                } else {
+                  const badResponseCodeMsg =
+                    "Could not get access token for Dynamics 365 Web API. Response code " +
+                    response.statusCode +
+                    ", message: " +
+                    response.statusMessage;
+                  console.error(badResponseCodeMsg);
+          
+                  var ses = new aws.SES();
+                  var params = {
+                    Destination: {
+                      ToAddresses: ["${NotificationEmailAddress}"]
+                    },
+                    Message: {
+                      Body: {
+                        Html: {
+                          Charset: "UTF-8",
+                          Data:
+                            "<b>Amazon Connect Microsoft Dynamics 365 Integration failed to authenticate</b><br/>Lambda function failed to get an access token. Please check the error below<br/>" +
+                            badResponseCodeMsg
+                        }
+                      },
+                      Subject: {
+                        Charset: "UTF-8",
+                        Data:
+                          "Amazon Connect Microsoft Dynamics 365 Integration failed to authenticate"
+                      }
+                    },
+                    Source: "${NotificationEmailAddress}"
+                  };
+          
+                  ses.sendEmail(params, function(err, data) {
+                    if (err) console.error("Failed to send notification email", err);
+                  });
+          
+                  callback(badResponseCodeMsg);
+                }
+              });
+            });
+          
+            authRequestClient.on("error", function(e) {
+              console.error("Auth request failed with error", e);
+              callback("Auth request failed with error: " + e);
+            });
+          
+            authRequestClient.write(authRequestBody);
+            authRequestClient.end();
+          };
+      Handler: "index.handler"
+      Role: !GetAtt 
+        - "executeOwnLambdaIAMRole"
+        - "Arn"
+      Runtime: "nodejs6.10"
+      Timeout: 8
+      MemorySize: 128
+      Environment:
+        Variables:
+          AzureADDomain: !Sub ${AzureADDomain}
+          DynamicsHostDomain: !Sub ${DynamicsHostDomain}
+          DynamicsClientId: !Sub ${DynamicsClientId}
+          DynamicsClientSecret: !Sub ${DynamicsClientSecret}
+    DependsOn:
+      - "executeOwnLambdaIAMRole"
+  # IAM role to for a Lambda to execute itself and also execute the getDynamicsTokenLambdaFunction
+  executeOwnAndGetTokenLambdaIAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: "Allow"
+          Principal:
+            Service:
+              - "lambda.amazonaws.com"
+          Action:
+            - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies: 
+        - 
+          PolicyName: "invokeTokenLambda"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "lambda:InvokeFunction"
+                Resource:
+                  - !GetAtt 
+                    - "getDynamicsTokenLambdaFunction"
+                    - "Arn"
+  # Node.js Lambda function that gets account information from Dynamics based on phone number
+  lookupDynamicsAccountByContactPhoneNumberLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "Looks up a Dynamics Account associated with the contact's phone number"
+      Code:
+        ZipFile: !Sub |
+          const https = require("https");
+          var aws = require("aws-sdk");
+          const dynamicsHostDomain = process.env["DynamicsHostDomain"];
+          var accessToken = "";
+          
+          exports.handler = (event, context, callback) => {
+            const invokedByCloudWatchEvent =
+              event.Name == "CloudWatchEvent" && event.Type == "KeepWarm";
+            if (invokedByCloudWatchEvent) {
+              console.log("Invoked by Cloud Watch Event");
+            }
+          
+            if (accessToken == "" || invokedByCloudWatchEvent) {
+              getAccessTokenAndThenLookupAccountByPhone(
+                event.Details,
+                callback,
+                !invokedByCloudWatchEvent
+              );
+            } else {
+              lookupAccountByPhone(event.Details, callback);
+            }
+          };
+          
+          function getAccessTokenAndThenLookupAccountByPhone(
+            contactDetails,
+            callback,
+            doLookup
+          ) {
+            console.log("Requesting Dynamics API access token");
+            var lambda = new aws.Lambda({
+              region: "${AWS::Region}"
+            });
+            lambda.invoke(
+              {
+                FunctionName: "${getDynamicsTokenLambdaFunction}",
+                Payload: ""
+              },
+              function(error, data) {
+                if (error) {
+                  console.error("Failed to invoke Lambda to get new access token", error);
+                  callback("Failed to invoke Lambda to get new access token: " + error);
+                }
+                if (data) {
+                  var payloadObject = JSON.parse(data.Payload);
+                  console.log("Got Dynamics API access token");
+                  accessToken = payloadObject.accessToken;
+                  if (doLookup) {
+                    lookupAccountByPhone(contactDetails, callback);
+                  }
+                }
+              }
+            );
+          }
+          
+          function lookupAccountByPhone(contactDetails, callback) {
+            var callerPhoneNumber = contactDetails.ContactData.CustomerEndpoint.Address;
+            callerPhoneNumber = callerPhoneNumber.replace(/^\+[0-9]/, ""); //strip +1
+            console.log(
+              "Starting Dynamics account lookup for number " +
+                callerPhoneNumber +
+                " from Dynamics instance at " +
+                dynamicsHostDomain
+            );
+          
+            var dynamicsLookupQuery =
+              "/api/data/v8.2/accounts?$select=name&$filter=startswith(telephone1,%27" +
+              callerPhoneNumber +
+              "%27)";
+          
+            var dynamicsLookupRequestHeaders = {
+              Authorization: "Bearer " + accessToken,
+              Accept: "application/json"
+            };
+          
+            var lookupRequestParams = {
+              host: dynamicsHostDomain,
+              path: dynamicsLookupQuery,
+              method: "GET",
+              headers: dynamicsLookupRequestHeaders
+            };
+          
+            https
+              .get(lookupRequestParams, response => {
+                var lookupResponseBody = "";
+          
+                response.on("data", dataChunk => {
+                  lookupResponseBody += dataChunk;
+                });
+          
+                response.on("end", function() {
+                  if (response.statusCode == 200) {
+                    const parsedLookupResponseEnvelope = JSON.parse(lookupResponseBody);
+                    if (parsedLookupResponseEnvelope.value.length == 0) {
+                      console.log(
+                        "Account look up for " + callerPhoneNumber + " found no results"
+                      );
+                      const result = {
+                        accountId: "NotFound",
+                        accountName: "NotFound",
+                        accountPhoneNumber: callerPhoneNumber
+                      };
+                      callback(null, result);
+                    } else {
+                      console.log(
+                        "Found " +
+                          parsedLookupResponseEnvelope.value.length +
+                          " Dynamics account(s) for " +
+                          callerPhoneNumber +
+                          ". Returning first match"
+                      );
+                      const firstAccountFound = parsedLookupResponseEnvelope.value[0];
+                      const result = {
+                        accountId: firstAccountFound.accountid,
+                        accountName: firstAccountFound.name,
+                        accountPhoneNumber: callerPhoneNumber
+                      };
+                      callback(null, result);
+                    }
+                  } else {
+                    const badResponseCodeMsg =
+                      "Could not find account. Response code " +
+                      response.statusCode +
+                      ", message: " +
+                      response.statusMessage;
+                    console.error(badResponseCodeMsg);
+                    callback(badResponseCodeMsg);
+                  }
+                });
+              })
+              .on("error", e => {
+                console.error("Account lookup request failed with error: ", e);
+                callback("Account lookup failed with error: " + e);
+              });
+          }
+      Handler: "index.handler"
+      Role: !GetAtt 
+        - "executeOwnAndGetTokenLambdaIAMRole"
+        - "Arn"
+      Runtime: "nodejs6.10"
+      Timeout: 8
+      MemorySize: 128
+      Environment:
+        Variables:
+          DynamicsHostDomain: !Sub ${DynamicsHostDomain}
+    DependsOn:
+      - "executeOwnAndGetTokenLambdaIAMRole"
+  # permission so that connect can invoke it
+  lookupDynamicsAccountByContactPhoneNumberLambdaFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn: lookupDynamicsAccountByContactPhoneNumberLambdaFunction
+    Properties:
+      FunctionName:
+        Ref: lookupDynamicsAccountByContactPhoneNumberLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+  # Node.js Lambda function that adds a note to a Dynamics account for a Connect call
+  addNoteToDynamicsAccountLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          const https = require("https");
+          var aws = require("aws-sdk");
+          const dynamicsHostDomain = process.env["DynamicsHostDomain"];
+          var accessToken = "";
+          
+          exports.handler = (event, context, callback) => {
+            const invokedByCloudWatchEvent =
+              event.Name == "CloudWatchEvent" && event.Type == "KeepWarm";
+            if (invokedByCloudWatchEvent) {
+              console.log("Invoked by Cloud Watch Event");
+            }
+          
+            if (accessToken == "" || invokedByCloudWatchEvent) {
+              getAccessTokenAndThenAddNote(
+                event.Details,
+                callback,
+                !invokedByCloudWatchEvent
+              );
+            } else {
+              addNote(event.Details, callback);
+            }
+          };
+          
+          function getAccessTokenAndThenAddNote(contactDetails, callback, doAddNote) {
+            console.log("Requesting Dynamics API access token");
+            var lambda = new aws.Lambda({
+              region: "${AWS::Region}"
+            });
+            lambda.invoke(
+              {
+                FunctionName: "${getDynamicsTokenLambdaFunction}",
+                Payload: ""
+              },
+              function(error, data) {
+                if (error) {
+                  console.error("Failed to invoke Lambda to get new access token", error);
+                  callback("Failed to invoke Lambda to get new access token: " + error);
+                }
+                if (data) {
+                  var payloadObject = JSON.parse(data.Payload);
+                  console.log("Got Dynamics API access token");
+                  accessToken = payloadObject.accessToken;
+                  if (doAddNote) {
+                    addNote(contactDetails, callback);
+                  }
+                }
+              }
+            );
+          }
+          
+          function addNote(contactDetails, callback) {
+            var accountId = contactDetails.ContactData.Attributes.DynamicsAccountId;
+            var callerPhoneNumber = contactDetails.ContactData.CustomerEndpoint.Address;
+            callerPhoneNumber = callerPhoneNumber.replace(/^\+[0-9]/, ""); //strip +1
+            var queueName = "Not set";
+            if (contactDetails.ContactData.Queue) {
+              queueName = contactDetails.ContactData.Queue.Name;
+            }
+            var connectPhoneNumber = "Unknown";
+            if (contactDetails.ContactData.SystemEndpoint) {
+              connectPhoneNumber = contactDetails.ContactData.SystemEndpoint.Address;
+              connectPhoneNumber = connectPhoneNumber.replace(/^\+[0-9]/, ""); //strip +1
+            }
+          
+            console.log(
+              "Adding Note for Connect call from " +
+                callerPhoneNumber +
+                " to Account " +
+                accountId +
+                " in Dynamics"
+            );
+          
+            var callRequestHeaders = {
+              Authorization: "Bearer " + accessToken,
+              "Content-Type": "application/json; charset=utf-8",
+              "OData-MaxVersion": "4.0",
+              "OData-Version": "4.0",
+              Accept: "application/json"
+            };
+          
+            var options = {
+              host: dynamicsHostDomain,
+              path: "/api/data/v8.2/annotations",
+              method: "POST",
+              headers: callRequestHeaders
+            };
+          
+            const subject = "Amazon Connect call received from " + callerPhoneNumber;
+            var notetext =
+              "Caller dialed " +
+              connectPhoneNumber +
+              " from primary phone number of this account \n";
+            if (queueName != "Not set") {
+              notetext += "Caller was placed into " + queueName + " queue";
+            }
+          
+            var note = {
+              subject: subject,
+              notetext: notetext
+            };
+            note["objectid_account@odata.bind"] = "accounts(" + accountId + ")";
+            var noteRequestBody = JSON.stringify(note);
+          
+            var noteRequestClient = https.request(options, function(response) {
+              var insertPhoneCallResponse = "";
+          
+              response.on("data", function(dataChunk) {
+                insertPhoneCallResponse += dataChunk;
+              });
+          
+              response.on("end", function() {
+                if (response.statusCode == 204) {
+                  console.log("Added Note to account");
+                  callback(null, { success: true });
+                } else {
+                  const badResponseCodeMsg =
+                    "Could not add Note to account. Response code " +
+                    response.statusCode +
+                    ", message: " +
+                    response.statusMessage;
+                  console.error(badResponseCodeMsg);
+                  callback(badResponseCodeMsg);
+                }
+              });
+            });
+          
+            noteRequestClient.on("error", function(e) {
+              console.error("Add Note request failed with error", e);
+              callback("Add Note request failed with error: " + e);
+            });
+          
+            noteRequestClient.write(noteRequestBody);
+            noteRequestClient.end();
+          }
+      Handler: "index.handler"
+      Role: !GetAtt 
+        - "executeOwnAndGetTokenLambdaIAMRole"
+        - "Arn"
+      Runtime: "nodejs6.10"
+      Timeout: 8
+      MemorySize: 128
+      Environment:
+        Variables:
+          DynamicsHostDomain: !Sub ${DynamicsHostDomain}
+    DependsOn:
+      - "executeOwnAndGetTokenLambdaIAMRole"
+  # permission so that connect can invoke it
+  addNoteToDynamicsAccountLambdaFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn: addNoteToDynamicsAccountLambdaFunction
+    Properties:
+      FunctionName:
+        Ref: addNoteToDynamicsAccountLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+  # CloudWatch Event to periodically trigger the Dynamics Lambda functions
+  dynamicsLambdaFunctionsTrigger:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      ScheduleExpression: !Sub rate(${TriggerRateMinutes} minutes)
+      State: 'ENABLED'
+      Targets:
+        - 
+          Arn:
+            Fn::GetAtt:
+              - "lookupDynamicsAccountByContactPhoneNumberLambdaFunction"
+              - "Arn"
+          Input: '{ "Name": "CloudWatchEvent", "Type": "KeepWarm"}'
+          Id: "lookupDynamicsAccountByContactPhoneNumberTarget1"
+        - 
+          Arn:
+            Fn::GetAtt:
+              - "addNoteToDynamicsAccountLambdaFunction"
+              - "Arn"
+          Input: '{ "Name": "CloudWatchEvent", "Type": "KeepWarm"}'
+          Id: "addNoteToDynamicsAccountTarget1"
+  # Permissions for the CloudWatch Event to periodically trigger the account lookup Dynamics Lambda function
+  dynamicsAccountLookupLambdaFunctionTriggerInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        Ref: "lookupDynamicsAccountByContactPhoneNumberLambdaFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+       Fn::GetAtt:
+        - "dynamicsLambdaFunctionsTrigger"
+        - "Arn"
+  # Permissions for the CloudWatch Event to periodically trigger the add phone call Dynamics Lambda function
+  dynamicsAddNoteLambdaFunctionTriggerInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        Ref: "addNoteToDynamicsAccountLambdaFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+       Fn::GetAtt:
+        - "dynamicsLambdaFunctionsTrigger"
+        - "Arn"
+Outputs:
+  dynamicsAccountLookupLambdaARN:
+    Description: "ARN of the Dynamics account lookup by phone number Lambda function"
+    Value:
+      Fn::GetAtt:
+        - "lookupDynamicsAccountByContactPhoneNumberLambdaFunction"
+        - "Arn"
+  addNoteToDynamicsAccountLambdaARN:
+    Description: "ARN of the Dynamics add note Lambda function"
+    Value:
+      Fn::GetAtt:
+        - "addNoteToDynamicsAccountLambdaFunction"
+        - "Arn"
