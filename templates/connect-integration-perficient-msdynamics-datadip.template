@@ -22,10 +22,6 @@ Parameters:
     Type: "String"
     Description: "The client secret of the Azure AD app registration you created with access to Dynamics"
     NoEcho: true
-  TriggerRateMinutes:
-    Type: "Number"
-    Description: "How often the Dynamics Lambda functions are invoked to keep them warm and refresh their access tokens"
-    Default: 30
   NotificationEmailAddress:
     Type: "String"
     Description: "The email address to send notifications if Dynamics Web API authentication fails. The notifications will also be from this email address"
@@ -178,7 +174,7 @@ Resources:
         - "Arn"
       Runtime: "nodejs6.10"
       Timeout: 8
-      MemorySize: 128
+      MemorySize: 256
       Environment:
         Variables:
           AzureADDomain: !Sub ${AzureADDomain}
@@ -231,24 +227,24 @@ Resources:
             const invokedByCloudWatchEvent =
               event.Name == "CloudWatchEvent" && event.Type == "KeepWarm";
             if (invokedByCloudWatchEvent) {
-              console.log("Invoked by Cloud Watch Event");
+              console.log(
+                "Invoked by Cloud Watch Event. Will get token and do dummy lookup query to keep Lambda warm"
+              );
             }
           
             if (accessToken == "" || invokedByCloudWatchEvent) {
-              getAccessTokenAndThenLookupAccountByPhone(
-                event.Details,
-                callback,
-                !invokedByCloudWatchEvent
-              );
+              getAccessTokenAndThenLookupAccountByPhone("+15551234567", callback);
             } else {
-              lookupAccountByPhone(event.Details, callback);
+              lookupAccountByPhone(
+                event.Details.ContactData.CustomerEndpoint.Address,
+                callback
+              );
             }
           };
           
           function getAccessTokenAndThenLookupAccountByPhone(
-            contactDetails,
-            callback,
-            doLookup
+            callerPhoneNumber,
+            callback
           ) {
             console.log("Requesting Dynamics API access token");
             var lambda = new aws.Lambda({
@@ -268,16 +264,13 @@ Resources:
                   var payloadObject = JSON.parse(data.Payload);
                   console.log("Got Dynamics API access token");
                   accessToken = payloadObject.accessToken;
-                  if (doLookup) {
-                    lookupAccountByPhone(contactDetails, callback);
-                  }
+                  lookupAccountByPhone(callerPhoneNumber, callback);
                 }
               }
             );
           }
           
-          function lookupAccountByPhone(contactDetails, callback) {
-            var callerPhoneNumber = contactDetails.ContactData.CustomerEndpoint.Address;
+          function lookupAccountByPhone(callerPhoneNumber, callback) {
             callerPhoneNumber = callerPhoneNumber.replace(/^\+[0-9]/, ""); //strip +1
             console.log(
               "Starting Dynamics account lookup for number " +
@@ -287,7 +280,7 @@ Resources:
             );
           
             var dynamicsLookupQuery =
-              "/api/data/v8.2/accounts?$select=name&$filter=startswith(telephone1,%27" +
+              "/api/data/v8.2/accounts?$select=name&$top=1&$filter=startswith(telephone1,%27" +
               callerPhoneNumber +
               "%27)";
           
@@ -325,13 +318,7 @@ Resources:
                       };
                       callback(null, result);
                     } else {
-                      console.log(
-                        "Found " +
-                          parsedLookupResponseEnvelope.value.length +
-                          " Dynamics account(s) for " +
-                          callerPhoneNumber +
-                          ". Returning first match"
-                      );
+                      console.log("Found Dynamics account for " + callerPhoneNumber);
                       const firstAccountFound = parsedLookupResponseEnvelope.value[0];
                       const result = {
                         accountId: firstAccountFound.accountid,
@@ -341,7 +328,7 @@ Resources:
                       callback(null, result);
                     }
                   } else {
-                    const badResponseCodeMsg =
+                    var badResponseCodeMsg =
                       "Could not find account. Response code " +
                       response.statusCode +
                       ", message: " +
@@ -362,7 +349,7 @@ Resources:
         - "Arn"
       Runtime: "nodejs6.10"
       Timeout: 8
-      MemorySize: 128
+      MemorySize: 256
       Environment:
         Variables:
           DynamicsHostDomain: !Sub ${DynamicsHostDomain}
@@ -393,9 +380,6 @@ Resources:
           exports.handler = (event, context, callback) => {
             const invokedByCloudWatchEvent =
               event.Name == "CloudWatchEvent" && event.Type == "KeepWarm";
-            if (invokedByCloudWatchEvent) {
-              console.log("Invoked by Cloud Watch Event");
-            }
           
             if (accessToken == "" || invokedByCloudWatchEvent) {
               getAccessTokenAndThenAddNote(
@@ -408,8 +392,7 @@ Resources:
             }
           };
           
-          function getAccessTokenAndThenAddNote(contactDetails, callback, doAddNote) {
-            console.log("Requesting Dynamics API access token");
+          function getAccessTokenAndThenAddNote(contactDetails, callback, addRealNote) {
             var lambda = new aws.Lambda({
               region: "${AWS::Region}"
             });
@@ -420,15 +403,22 @@ Resources:
               },
               function(error, data) {
                 if (error) {
-                  console.error("Failed to invoke Lambda to get new access token", error);
                   callback("Failed to invoke Lambda to get new access token: " + error);
                 }
                 if (data) {
                   var payloadObject = JSON.parse(data.Payload);
                   console.log("Got Dynamics API access token");
                   accessToken = payloadObject.accessToken;
-                  if (doAddNote) {
+                  if (addRealNote) {
                     addNote(contactDetails, callback);
+                  } else {
+                    https.get(
+                      "https://" +
+                        dynamicsHostDomain +
+                        "/api/data/v8.2/accounts?%24select=name&%24top=1",
+                      response => {}
+                    );
+                    callback(null, "OK");
                   }
                 }
               }
@@ -453,13 +443,26 @@ Resources:
               "Adding Note for Connect call from " +
                 callerPhoneNumber +
                 " to Account " +
-                accountId +
-                " in Dynamics"
+                accountId
             );
+          
+            const subject = "Amazon Connect call received from " + callerPhoneNumber;
+            var notetext = "Caller dialed " + connectPhoneNumber + " \n";
+            if (queueName != "Not set") {
+              notetext += "Caller was placed into " + queueName + " queue";
+            }
+          
+            var note = {
+              subject: subject,
+              notetext: notetext
+            };
+            note["objectid_account@odata.bind"] = "accounts(" + accountId + ")";
+            var noteRequestBody = JSON.stringify(note);
           
             var callRequestHeaders = {
               Authorization: "Bearer " + accessToken,
               "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": noteRequestBody.length,
               "OData-MaxVersion": "4.0",
               "OData-Version": "4.0",
               Accept: "application/json"
@@ -472,22 +475,6 @@ Resources:
               headers: callRequestHeaders
             };
           
-            const subject = "Amazon Connect call received from " + callerPhoneNumber;
-            var notetext =
-              "Caller dialed " +
-              connectPhoneNumber +
-              " from primary phone number of this account \n";
-            if (queueName != "Not set") {
-              notetext += "Caller was placed into " + queueName + " queue";
-            }
-          
-            var note = {
-              subject: subject,
-              notetext: notetext
-            };
-            note["objectid_account@odata.bind"] = "accounts(" + accountId + ")";
-            var noteRequestBody = JSON.stringify(note);
-          
             var noteRequestClient = https.request(options, function(response) {
               var insertPhoneCallResponse = "";
           
@@ -497,10 +484,9 @@ Resources:
           
               response.on("end", function() {
                 if (response.statusCode == 204) {
-                  console.log("Added Note to account");
                   callback(null, { success: true });
                 } else {
-                  const badResponseCodeMsg =
+                  var badResponseCodeMsg =
                     "Could not add Note to account. Response code " +
                     response.statusCode +
                     ", message: " +
@@ -525,7 +511,7 @@ Resources:
         - "Arn"
       Runtime: "nodejs6.10"
       Timeout: 8
-      MemorySize: 128
+      MemorySize: 256
       Environment:
         Variables:
           DynamicsHostDomain: !Sub ${DynamicsHostDomain}
@@ -546,7 +532,7 @@ Resources:
   dynamicsLambdaFunctionsTrigger:
     Type: 'AWS::Events::Rule'
     Properties:
-      ScheduleExpression: !Sub rate(${TriggerRateMinutes} minutes)
+      ScheduleExpression: !Sub rate(5 minutes)
       State: 'ENABLED'
       Targets:
         - 
