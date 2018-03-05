@@ -8,4 +8,4 @@ global:
 tests:
   defaults:
     parameter_input: defaults.json
-    template_file: example.template
+    template_file: perficient-msdynamics-datadip.template
