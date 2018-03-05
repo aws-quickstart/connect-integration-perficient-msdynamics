@@ -6,7 +6,7 @@
 #
 #or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Microsoft Dynamics Data Integration Quick Start for Amazon Connect (aaa-1)"
+Description: "Microsoft Dynamics Data Integration Quick Start for Amazon Connect (qs-1o7u5ld9c)"
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -34,7 +34,7 @@ Metadata:
       DynamicsClientSecret:
         default: Azure AD App Secret
       NotificationEmailAddress:
-        default: Error Notification Email Address      
+        default: Error Notification Email Address
       FunctionKeepWarmInterval:
         default: Dynamics Functions Keep Warm Interval (minutes)
       QSS3BucketName:
@@ -85,7 +85,7 @@ Parameters:
       can include numbers, lowercase letters, uppercase letters, hyphens (-), and
       forward slash (/)
     Type: String
-    Default: connect/integration/perficient-msdynamics-datadip/latest/
+    Default: connect/integration/perficient/msdynamics/datadip/latest/
 Rules:
   RegionSupport:
     Assertions:
@@ -189,13 +189,13 @@ Resources:
             - "sts:AssumeRole"
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-      Policies: 
-        - 
+      Policies:
+        -
           PolicyName: "sendSES"
-          PolicyDocument: 
+          PolicyDocument:
             Version: "2012-10-17"
-            Statement: 
-              - 
+            Statement:
+              -
                 Effect: "Allow"
                 Action: "ses:SendEmail"
                 Resource: "*"
@@ -265,17 +265,17 @@ Resources:
             - "sts:AssumeRole"
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-      Policies: 
-        - 
+      Policies:
+        -
           PolicyName: "invokeTokenLambda"
-          PolicyDocument: 
+          PolicyDocument:
             Version: "2012-10-17"
-            Statement: 
-              - 
+            Statement:
+              -
                 Effect: "Allow"
                 Action: "lambda:InvokeFunction"
                 Resource:
-                  - !GetAtt 
+                  - !GetAtt
                     - "GetDynamicsTokenFunction"
                     - "Arn"
     DependsOn:
@@ -379,14 +379,14 @@ Resources:
       ScheduleExpression: !Sub rate(${FunctionKeepWarmInterval} minutes)
       State: 'ENABLED'
       Targets:
-        - 
+        -
           Arn:
             Fn::GetAtt:
               - "LookupDynamicsAccountFunction"
               - "Arn"
           Input: '{ "Name": "CloudWatchEvent", "Type": "KeepWarm"}'
           Id: "LookupDynamicsAccountTarget1"
-        - 
+        -
           Arn:
             Fn::GetAtt:
               - "AddDynamicsAccountNoteFunction"
@@ -402,7 +402,7 @@ Resources:
         Ref: "LookupDynamicsAccountFunction"
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: 
+      SourceArn:
        Fn::GetAtt:
         - "DynamicsFunctionsKeepWarmTrigger"
         - "Arn"
@@ -415,7 +415,7 @@ Resources:
         Ref: "AddDynamicsAccountNoteFunction"
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: 
+      SourceArn:
        Fn::GetAtt:
         - "DynamicsFunctionsKeepWarmTrigger"
         - "Arn"
