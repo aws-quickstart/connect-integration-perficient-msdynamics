@@ -5,7 +5,7 @@ This Quick Start by Perficient enables organizations to offer better customer ex
 
 The Quick Start provides prebuilt AWS Lambda functions that perform the integration. After you deploy the Quick Start, you can use Amazon Connect contact flows to identify accounts in Microsoft Dynamics 365 by caller phone number and to record call details in a note on the account.
 
-![Architecture for Perficient integration](https://d0.awsstatic.com/partner-network/QuickStart/connect/microsoft-dynamics-data-dip-by-perficient.png)
+![Architecture for Perficient integration](https://d0.awsstatic.com/partner-network/QuickStart/connect/connect-integration-perficient-architecture.png)
 
 For details and launch information, see the [data sheet](https://aws.amazon.com/quickstart/connect/microsoft-dynamics-data-dip-by-perficient/).
 
