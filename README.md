@@ -7,6 +7,6 @@ The Quick Start provides prebuilt AWS Lambda functions that perform the integrat
 
 ![Architecture for Perficient integration](https://d0.awsstatic.com/partner-network/QuickStart/connect/connect-integration-perficient-architecture.png)
 
-For details and launch information, see the [data sheet](https://aws.amazon.com/quickstart/connect/microsoft-dynamics-data-dip-by-perficient/).
+For details and launch information, see the [data sheet](https://fwd.aws/qEbjW).
 
 To post feedback, submit feature ideas, or report bugs, use the **Issues** section of this GitHub repo.
