@@ -1,5 +1,5 @@
-# connect-integration-perficient-msdynamics-datadip
-## Amazon Connect Integration for Microsoft Dynamics 365 Data Dip by Perficient
+# connect-integration-perficient-msdynamics
+## Amazon Connect Integration -- Toolkit for Microsoft Dynamics 365 by Perficient
 
 This Quick Start by Perficient enables organizations to offer better customer experiences in Amazon Connect by providing data integration with Microsoft Dynamics 365.
 

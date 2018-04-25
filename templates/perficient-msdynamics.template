@@ -83,7 +83,7 @@ Parameters:
       can include numbers, lowercase letters, uppercase letters, hyphens (-), and
       forward slash (/)
     Type: String
-    Default: connect-integration-perficient-msdynamics-datadip/
+    Default: connect-integration-perficient-msdynamics/
 Rules:
   RegionSupport:
     Assertions:
