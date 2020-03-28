@@ -14,10 +14,11 @@ Metadata:
       - NotificationEmailAddress
       - FunctionKeepWarmInterval
     - Label:
-        default: AWS Quick Start Configuration
-      Parameters:
-      - QSS3BucketName
-      - QSS3KeyPrefix
+        default: AWS Quick Start configuration
+      Parameters:      
+        - QSS3BucketName
+        - QSS3BucketRegion
+        - QSS3KeyPrefix
     ParameterLabels:
       AzureADDomain:
         default: Azure AD Domain
@@ -33,6 +34,8 @@ Metadata:
         default: Dynamics Functions Keep Warm Interval (minutes)
       QSS3BucketName:
         default: Quick Start S3 Bucket Name
+      QSS3BucketRegion:
+        default: Quick Start S3 bucket region
       QSS3KeyPrefix:
         default: Quick Start S3 Key Prefix
 Parameters:
@@ -74,6 +77,10 @@ Parameters:
       numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
       or end with a hyphen (-)
     Default: aws-quickstart
+    Type: String
+  QSS3BucketRegion:
+    Default: 'us-east-1'
+    Description: 'The AWS Region where the Quick Start S3 bucket (QSS3BucketName) is hosted. When using your own bucket, you must specify this value.'
     Type: String
   QSS3KeyPrefix:
     AllowedPattern: ^[0-9a-zA-Z-/]*$
@@ -125,6 +132,8 @@ Rules:
           - me@mycompany.com
       AssertDescription: Error Notification Email Address parameter cannot be the
         default value
+Conditions:
+  UsingDefaultBucket: !Equals [!Ref QSS3BucketName, 'aws-quickstart']
 Resources:
   TestFunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -307,8 +316,6 @@ Resources:
       Principal: connect.amazonaws.com
       SourceAccount:
         Ref: AWS::AccountId
-    DependsOn:
-    - LookupDynamicsAccountFunction
   TestAddDynamicsAccountNoteFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -367,8 +374,6 @@ Resources:
       Principal: connect.amazonaws.com
       SourceAccount:
         Ref: AWS::AccountId
-    DependsOn:
-    - AddDynamicsAccountNoteFunction
   DynamicsFunctionsKeepWarmTrigger:
     Type: AWS::Events::Rule
     Properties:
@@ -400,8 +405,6 @@ Resources:
         Fn::GetAtt:
         - DynamicsFunctionsKeepWarmTrigger
         - Arn
-    DependsOn:
-    - DynamicsFunctionsKeepWarmTrigger
   AddDynamicsAccountNoteFunctionTriggerInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
