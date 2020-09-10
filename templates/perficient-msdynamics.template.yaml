@@ -159,7 +159,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -216,7 +216,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: GetDynamicsTokenFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -239,7 +239,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -293,7 +293,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -324,7 +324,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -351,7 +351,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 8
       Code:
         S3Bucket:
