@@ -17,7 +17,6 @@ Metadata:
         default: AWS Quick Start configuration
       Parameters:      
         - QSS3BucketName
-        - QSS3BucketRegion
         - QSS3KeyPrefix
     ParameterLabels:
       AzureADDomain:
@@ -34,8 +33,6 @@ Metadata:
         default: Dynamics Functions Keep Warm Interval (minutes)
       QSS3BucketName:
         default: Quick Start S3 Bucket Name
-      QSS3BucketRegion:
-        default: Quick Start S3 bucket region
       QSS3KeyPrefix:
         default: Quick Start S3 Key Prefix
 Parameters:
@@ -155,7 +152,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -216,7 +213,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: GetDynamicsTokenFunctionExecutionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -239,7 +236,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -293,7 +290,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -324,7 +321,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -351,7 +348,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
-      Runtime: nodejs10.x
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
