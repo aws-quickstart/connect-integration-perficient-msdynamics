@@ -17,7 +17,6 @@ Metadata:
         default: AWS Quick Start configuration
       Parameters:      
         - QSS3BucketName
-        - QSS3BucketRegion
         - QSS3KeyPrefix
     ParameterLabels:
       AzureADDomain:
@@ -34,8 +33,6 @@ Metadata:
         default: Dynamics Functions Keep Warm Interval (minutes)
       QSS3BucketName:
         default: Quick Start S3 Bucket Name
-      QSS3BucketRegion:
-        default: Quick Start S3 bucket region
       QSS3KeyPrefix:
         default: Quick Start S3 Key Prefix
 Parameters:
@@ -77,10 +74,6 @@ Parameters:
       numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
       or end with a hyphen (-)
     Default: aws-quickstart
-    Type: String
-  QSS3BucketRegion:
-    Default: 'us-east-1'
-    Description: 'The AWS Region where the Quick Start S3 bucket (QSS3BucketName) is hosted. When using your own bucket, you must specify this value.'
     Type: String
   QSS3KeyPrefix:
     AllowedPattern: ^[0-9a-zA-Z-/]*$
@@ -149,7 +142,7 @@ Resources:
           - sts:AssumeRole
       Path: /
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
   TestGetDynamicsTokenFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -159,7 +152,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -197,7 +190,7 @@ Resources:
           Action:
           - sts:AssumeRole
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
       - PolicyName: sendSES
         PolicyDocument:
@@ -206,6 +199,10 @@ Resources:
           - Effect: Allow
             Action: ses:SendEmail
             Resource: '*'
+            Condition:
+              ForAllValues:StringLike:
+                ses:Recipients:
+                  - !Sub ${NotificationEmailAddress}
     DependsOn:
     - InvokeTestGetDynamicsTokenFunction
   GetDynamicsTokenFunction:
@@ -216,7 +213,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: GetDynamicsTokenFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -239,7 +236,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -271,7 +268,7 @@ Resources:
           Action:
           - sts:AssumeRole
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
       - PolicyName: invokeTokenLambda
         PolicyDocument:
@@ -293,7 +290,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -324,7 +321,7 @@ Resources:
       MemorySize: 128
       Role:
         Fn::GetAtt: TestFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
@@ -351,7 +348,7 @@ Resources:
       MemorySize: 256
       Role:
         Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
-      Runtime: nodejs6.10
+      Runtime: nodejs14.x
       Timeout: 8
       Code:
         S3Bucket:
