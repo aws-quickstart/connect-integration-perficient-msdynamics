@@ -1,12 +1,3 @@
-# connect-integration-perficient-msdynamics
-## Amazon Connect Integration -- Toolkit for Microsoft Dynamics 365 by Perficient
-
-This Quick Start by Perficient enables organizations to offer better customer experiences in Amazon Connect by providing data integration with Microsoft Dynamics 365.
-
-The Quick Start provides prebuilt AWS Lambda functions that perform the integration. After you deploy the Quick Start, you can use Amazon Connect contact flows to identify accounts in Microsoft Dynamics 365 by caller phone number and to record call details in a note on the account.
-
-![Architecture for Perficient integration](https://d0.awsstatic.com/partner-network/QuickStart/connect/connect-integration-perficient-architecture.png)
-
-For details and launch information, see the [data sheet](https://fwd.aws/qEbjW).
-
-To post feedback, submit feature ideas, or report bugs, use the **Issues** section of this GitHub repo.
+# connect-integration-perficient-msdynamics 
+## This repository has been deprecated in favor of https://github.com/aws-ia/cfn-ps-connect-integration-perficient-msdynamics. 
+***We will archive this repository and keep it publicly available until May 1, 2024.***
